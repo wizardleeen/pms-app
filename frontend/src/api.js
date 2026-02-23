@@ -1,4 +1,4 @@
-const API_BASE = 'https://pms-api-wizardleeen.cloud.sealos.io/api';
+const API_BASE = 'https://pms-app.metavm.tech/api';
 
 async function fetchAPI(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {

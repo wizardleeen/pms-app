@@ -7,8 +7,14 @@ const categoryRoutes = require('./routes/categories');
 const app = express();
 const PORT = process.env.PORT || 9000;
 
-// Middleware
-app.use(cors());
+// CORS configuration - allow frontend domain
+const corsOptions = {
+  origin: ['https://pms-app1.metavm.tech', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
