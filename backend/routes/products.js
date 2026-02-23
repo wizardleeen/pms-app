@@ -1,45 +1,37 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db');
+const supabase = require('../supabase');
 
 // Get all products
 router.get('/', async (req, res) => {
   try {
     const { category, search, active } = req.query;
-    let query = `
-      SELECT p.*, c.name as category_name 
-      FROM products p 
-      LEFT JOIN categories c ON p.category_id = c.id 
-      WHERE 1=1
-    `;
-    const params = [];
-    let paramCount = 1;
+    let query = supabase.from('products').select('*, categories(name)');
 
     if (category) {
-      query += ` AND p.category_id = $${paramCount}`;
-      params.push(category);
-      paramCount++;
+      query = query.eq('category_id', category);
     }
-
     if (search) {
-      query += ` AND (p.name ILIKE $${paramCount} OR p.description ILIKE $${paramCount} OR p.sku ILIKE $${paramCount})`;
-      params.push(`%${search}%`);
-      paramCount++;
+      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%,sku.ilike.%${search}%`);
     }
-
     if (active !== undefined) {
-      query += ` AND p.is_active = $${paramCount}`;
-      params.push(active === 'true');
-      paramCount++;
+      query = query.eq('is_active', active === 'true');
     }
 
-    query += ' ORDER BY p.created_at DESC';
+    const { data, error } = await query.order('created_at', { ascending: false });
 
-    const result = await pool.query(query, params);
-    res.json(result.rows);
+    if (error) throw error;
+
+    // Transform to include category_name
+    const products = (data || []).map(p => ({
+      ...p,
+      category_name: p.categories?.name || null
+    }));
+
+    res.json(products);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -47,22 +39,19 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query(
-      `SELECT p.*, c.name as category_name 
-       FROM products p 
-       LEFT JOIN categories c ON p.category_id = c.id 
-       WHERE p.id = $1`,
-      [id]
-    );
+    const { data, error } = await supabase
+      .from('products')
+      .select('*, categories(name)')
+      .eq('id', id)
+      .single();
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found' });
 
-    res.json(result.rows[0]);
+    res.json({ ...data, category_name: data.categories?.name || null });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -71,20 +60,26 @@ router.post('/', async (req, res) => {
   try {
     const { name, description, price, stock, sku, image_url, is_active, category_id } = req.body;
     
-    const result = await pool.query(
-      `INSERT INTO products (name, description, price, stock, sku, image_url, is_active, category_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-       RETURNING *`,
-      [name, description, price, stock || 0, sku, image_url, is_active ?? true, category_id]
-    );
+    const { data, error } = await supabase
+      .from('products')
+      .insert([{ 
+        name, 
+        description, 
+        price, 
+        stock: stock || 0, 
+        sku, 
+        image_url, 
+        is_active: is_active ?? true, 
+        category_id 
+      }])
+      .select()
+      .single();
 
-    res.status(201).json(result.rows[0]);
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
     console.error(err.message);
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'SKU already exists' });
-    }
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -94,32 +89,30 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { name, description, price, stock, sku, image_url, is_active, category_id } = req.body;
 
-    const result = await pool.query(
-      `UPDATE products 
-       SET name = COALESCE($1, name), 
-           description = COALESCE($2, description), 
-           price = COALESCE($3, price), 
-           stock = COALESCE($4, stock), 
-           sku = COALESCE($5, sku), 
-           image_url = COALESCE($6, image_url), 
-           is_active = COALESCE($7, is_active), 
-           category_id = COALESCE($8, category_id)
-       WHERE id = $9
-       RETURNING *`,
-      [name, description, price, stock, sku, image_url, is_active, category_id, id]
-    );
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (price !== undefined) updateData.price = price;
+    if (stock !== undefined) updateData.stock = stock;
+    if (sku !== undefined) updateData.sku = sku;
+    if (image_url !== undefined) updateData.image_url = image_url;
+    if (is_active !== undefined) updateData.is_active = is_active;
+    if (category_id !== undefined) updateData.category_id = category_id;
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
+    const { data, error } = await supabase
+      .from('products')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
 
-    res.json(result.rows[0]);
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Product not found' });
+
+    res.json(data);
   } catch (err) {
     console.error(err.message);
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'SKU already exists' });
-    }
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -127,16 +120,13 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
+    const { error } = await supabase.from('products').delete().eq('id', id);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
+    if (error) throw error;
     res.json({ message: 'Product deleted successfully' });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -21,15 +21,9 @@ app.use(express.json());
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 
-// Health check with DB test
-app.get('/api/health', async (req, res) => {
-  try {
-    const pool = require('./db');
-    await pool.query('SELECT 1');
-    res.json({ status: 'OK', database: 'connected', timestamp: new Date().toISOString() });
-  } catch (err) {
-    res.status(500).json({ status: 'ERROR', database: 'disconnected', error: err.message });
-  }
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

@@ -1,15 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db');
+const supabase = require('../supabase');
 
 // Get all categories
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM categories ORDER BY name');
-    res.json(result.rows);
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .order('name');
+
+    if (error) throw error;
+    res.json(data || []);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -17,16 +22,19 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Category not found' });
 
-    res.json(result.rows[0]);
+    res.json(data);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -35,18 +43,17 @@ router.post('/', async (req, res) => {
   try {
     const { name, description } = req.body;
     
-    const result = await pool.query(
-      'INSERT INTO categories (name, description) VALUES ($1, $2) RETURNING *',
-      [name, description]
-    );
+    const { data, error } = await supabase
+      .from('categories')
+      .insert([{ name, description }])
+      .select()
+      .single();
 
-    res.status(201).json(result.rows[0]);
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
     console.error(err.message);
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'Category name already exists' });
-    }
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -56,22 +63,24 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { name, description } = req.body;
 
-    const result = await pool.query(
-      'UPDATE categories SET name = COALESCE($1, name), description = COALESCE($2, description) WHERE id = $3 RETURNING *',
-      [name, description, id]
-    );
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
+    const { data, error } = await supabase
+      .from('categories')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
 
-    res.json(result.rows[0]);
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Category not found' });
+
+    res.json(data);
   } catch (err) {
     console.error(err.message);
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'Category name already exists' });
-    }
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -79,16 +88,13 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING *', [id]);
+    const { error } = await supabase.from('categories').delete().eq('id', id);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
-
+    if (error) throw error;
     res.json({ message: 'Category deleted successfully' });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message });
   }
 });
 
