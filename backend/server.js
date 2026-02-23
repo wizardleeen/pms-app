@@ -7,7 +7,7 @@ const categoryRoutes = require('./routes/categories');
 const app = express();
 const PORT = process.env.PORT || 9000;
 
-// CORS configuration - allow frontend domain
+// CORS configuration
 const corsOptions = {
   origin: ['https://pms-app1.metavm.tech', 'http://localhost:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -21,9 +21,15 @@ app.use(express.json());
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+// Health check with DB test
+app.get('/api/health', async (req, res) => {
+  try {
+    const pool = require('./db');
+    await pool.query('SELECT 1');
+    res.json({ status: 'OK', database: 'connected', timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ status: 'ERROR', database: 'disconnected', error: err.message });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
